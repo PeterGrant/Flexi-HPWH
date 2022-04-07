@@ -1,0 +1,31 @@
+{
+ "Jacket Loss Coefficient (W/K)": 1,
+ "Backup Element Power (W)": 2,
+ "Resistance Deadband (deg C)": 3,
+ "Resistance Deadband, HP Active (deg C)": 4,
+ "Heat Pump Activation Deadband (deg C)": 5,
+ "Heat Pump Activation Deadband, Recent Set Temperature Change (deg C)": 6,
+ "Heat Pump Activation Deadband, Low Stratification (deg C)": 7,
+ "Heat Pump Deadband Time Period (s)": 8,
+ "Heat Pump Heat Addition Rate (W)": 9,
+ "Heat Rate Coefficients": [ 10, 11, 12, 13, 14, 15],
+ "Volume Tank (L)": 16,
+ "Power Coefficients": [ 17, 18, 19, 20, 21],
+ "Set Temperature (deg C)": 22,
+ "Varying Set Temperature": 23,
+ "Cutoff Temperature (deg C)": 24,
+ "Upper Thermostat Node": 25,
+ "Lower Thermostat Node": 26,
+ "Number of Nodes": 27,
+ "Resistance Lockout Time (min)": 28
+}
+
+
+
+
+
+
+
+
+
+
