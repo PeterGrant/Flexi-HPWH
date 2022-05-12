@@ -1,1 +1,4 @@
-"# Flexi-HPWH" 
+This repository contains the code for the Flexible HPWH Performance Predictor (Flexi-HPWH). It is a highly flexible, multiple node simulation tool capable of predicting the performance of unitary style HPWHs from different manufacturers, installed in different manners, with different load shifting controls. For more information see \Documentation\User's Guide.
+
+# Acknowledgements
+This model was developed as part of Pacific Gas and Electric Company’s Code Readiness project number ET18PGE1901. Development was supported by Pacific Gas and Electric Company and performed by Beyond Efficiency in collaboration with Frontier Energy. The project was guided and managed by Andrew Doeschot and Kelly Cunningham at Pacific Gas and Electric Company. Key technical contributions were also provided by Marc Hoeschele (Frontier Energy), Ben Larson (Larson Energy Research), and Garth Torvestad (2050 Partners).
