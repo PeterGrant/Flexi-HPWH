@@ -17,18 +17,17 @@ Also consider changing it to be a function so it's easier to maintain
 import pandas as pd
 import os
 
-cwd = os.getcwd()
-
+root = os.getcwd()
 # Read data for difference between OAT and surrounding air temperature when
 # the HPWH is installed in a small closet
-Closet = pd.read_csv(os.path.join(cwd, 'Data', 'TCloset-TOutdoor_C.csv'))
+Closet = pd.read_csv(os.path.join(root, 'Utilities', 'Data', 'TCloset-TOutdoor_C.csv'))
 # Read data for difference between OAT and surrounding air temperature when
 # the HPWH is installed in a standard attic
-Standard_Attic = pd.read_csv(os.path.join(cwd, 'Data', 'TAttic-TOutdoor_Standard_C.csv'), 
+Standard_Attic = pd.read_csv(os.path.join(root, 'Utilities', 'Data', 'TAttic-TOutdoor_Standard_C.csv'), 
                              index_col = 0)
 # Read data for difference between OAT and surrounding air temperature when
 # the HPWH is installed ina high performance attic
-HP_Attic = pd.read_csv(os.path.join(cwd, 'Data', 'TAttic-TOutdoor_HPAttic_C.csv'), 
+HP_Attic = pd.read_csv(os.path.join(root, 'Utilities', 'Data', 'TAttic-TOutdoor_HPAttic_C.csv'), 
                             index_col = 0)
 
 def get_temperatures(Model, Installation):
@@ -52,7 +51,8 @@ def get_temperatures(Model, Installation):
     Model: The input dataframe with new columns added describing the data
            analysis process and updated HPWH operating conditions.
     '''
-    
+    Model['Month'] = Model.index.month
+    Model['Hour'] = Model.index.hour
     if Installation == 'Open_Area':
         # Representing a scenario when the HPWH is installed in an area
         # with adequate air flow, does not impact the ambient temperature, and

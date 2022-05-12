@@ -250,7 +250,8 @@ class HPWH_MultipleNodes():
         self.HeatPump_SetChange_TimeWindow = config['Heat Pump Deadband Time Period (s)']
         self.ThermalMass_Tank = config['Volume Tank (L)'] * SpecificHeat_Water * Density_Water * kWh_In_J
         self.Power_Coefficients = config['Power Coefficients']
-        self.Set_Temperature = config['Set Temperature (deg C)']
+        self.Set_Temperature_HeatPump = config['Set Temperature, Heat Pump (deg C)']
+        self.Set_Temperature_Resistance = config['Set Temperature, Resistance (deg C)']
         self.Varying_Set_Temperature = config['Varying Set Temperature']
         self.Cutoff_Temperature = config['Cutoff Temperature (deg C)']
         self.Node_Temperatures = config['Node Temperatures (deg C)']
@@ -258,6 +259,8 @@ class HPWH_MultipleNodes():
         self.Lower_Thermostat_Node = config['Lower Thermostat Node']
         self.Number_Nodes = config['Number of Nodes']
         self.Time_Since_Set_Change = self.HeatPump_SetChange_TimeWindow + 1
+        self.Control_Logic_Model = config['Control Logic Model']
+#        self.Tank_Model = config['Tank Model'] # Commented out b/c this capability is not yet implemented
 #        self.Resistance_Lockout_Time = config['Resistance Lockout Time (min)']
 #        self.Time_Since_HeatPump_Activation = 0
 
@@ -303,6 +306,151 @@ class HPWH_MultipleNodes():
         '''        
         
         return self.HeatRate_HP_Coefficients[0] + self.HeatRate_HP_Coefficients[1] * T_Tank_Lower + self.HeatRate_HP_Coefficients[2] * T_Ambient + self.HeatRate_HP_Coefficients[3] * T_Tank_Lower ** 2 + self.HeatRate_HP_Coefficients[4] * T_Ambient ** 2
+
+    def control_logic(self, control_logic_model, data):
+        '''
+        Determines heat pump and ER element control logic decisions depending on the current operating
+        conditions and the selected control logic model.
+        
+        inputs:
+            control_logic_model: The name of the model to be used. Typically this matches control
+                                 logic of a specific manufacturer & model HPWH.
+                            
+        ouotputs:
+            Updates attributes of the HPWH
+            self.Time_Since_Set_Change: s. The time since the set temperature was last changed
+            self.Set_Temperature: deg C. The set temperature of the HPWH during this timestep
+            self.HeatPump_Deadband: deg C. The deadband of the HP used during this timestep.
+            self.HeatPump_Active: Boolean. States whether the HP is currently heating or not.
+            self.Resistance_Deadband: deg C. The deadband of the HP used during this timestep.
+            self.Resistance_Active: Boolean. States whether or not the ER are currently heating.
+        '''
+        
+        if control_logic_model == 'Rheem PROPH80':
+            # Start Rheem control logic
+            # When updating to add control logic from other manufacturers:
+            # -Remove this code to an external library of contro logic functions
+            # -Include a function to choose manufacturer control logic based on config file
+            # -Have that function call another function for control logic of that manufacturer
+            # -Update config files to state which manufacturer's control logic to use
+            # -It's possible each manufacturer will have multiple sets of control logic
+            # --Consider specifying a specific type of logic, not just a manufacturer
+            # Determine the deadband for the heat pump based on current conditions
+            # and simulation style
+            if self.Varying_Set_Temperature == True:
+                if abs(self.Set_Temperature_HeatPump - data[self.col_indx['Set Temperature, Heat Pump (deg C)']]) > 0:
+                    self.Time_Since_Set_Change = 0
+                else:
+                    self.Time_Since_Set_Change += data[self.col_indx['Timestep (min)']] * Seconds_In_Minute
+                self.Set_Temperature_HeatPump = data[self.col_indx['Set Temperature, Heat Pump (deg C)']]
+                self.Set_Temperature_Resistance = data[self.col_indx['Set Temperature, Resistance (deg C)']]
+            
+            if self.Time_Since_Set_Change < self.HeatPump_SetChange_TimeWindow:
+                self.HeatPump_Deadband = self.HeatPump_ActivationDeadband_RecentSetChange
+            else:
+                self.HeatPump_Deadband = self.HeatPump_Activation_Deadband
+
+            # Heat pump control logic. Determines whether the heat pump is on
+            # or off
+            # If the surrounding air is too cold for the heat pump to operate
+            if data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']] < self.Cutoff_Temperature:
+                self.HeatPump_Active = False
+            
+            elif self.HeatPump_Active == True:
+                # If the upper thermostat node temperature is above the set
+                # temperature Rheem HPs will not engage
+                # Can I delete the first part talking about the lower thermostat?
+                if (self.Node_Temperatures[self.Lower_Thermostat_Node] < self.Set_Temperature_HeatPump) & (self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature_HeatPump + 1):
+                    self.HeatPump_Active = True
+                else:
+                    self.HeatPump_Active = False
+            elif self.HeatPump_Active == False:
+                # If the lower thermostat water temperature is cold enough to
+                # activate the heat pump
+                if self.Node_Temperatures[self.Lower_Thermostat_Node] <= self.Set_Temperature_HeatPump - self.HeatPump_Deadband:
+                    if self.Node_Temperatures[self.Upper_Thermostat_Node] > self.Set_Temperature_HeatPump:
+                        self.HeatPump_Active = False
+                    else:
+                        self.HeatPump_Active = True
+                # If the upper thermostat calls for heating, but the lower thermostat is warm
+                elif self.Node_Temperatures[self.Upper_Thermostat_Node] <= self.Set_Temperature_HeatPump - self.HeatPump_ActivationDeadband_LowStratification:
+                    if (self.Node_Temperatures[self.Upper_Thermostat_Node] - self.Node_Temperatures[self.Lower_Thermostat_Node]) < 5:
+                        self.HeatPump_Active = True
+                    else:
+                        self.HeatPump_Active = False
+                else:
+                    self.HeatPump_Active = False
+            else:
+                self.HeatPump_Active = False
+        
+            # Set resistance element deadband based on HP status
+            if self.HeatPump_Active == True:
+                self.Resistance_Deadband = self.Upper_Resistance_Deadband_HPActive
+#                self.Time_Since_HeatPump_Activation += data[self.col_indx['Timestep (min)']]
+            else:
+                self.Resistance_Deadband = self.Upper_Resistance_Deadband
+#                self.Time_Since_HeatPump_Activation = 0
+
+             
+            # Resistance element control logic
+            # If it is too cold for the heat pump to operate
+            if data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']] < self.Cutoff_Temperature:
+                if self.Resistance_Active == True:
+                    # If the water in the tank is still cold
+                    # The resistance elements tend to cut off 2.3 deg C below the
+                    # set temperature
+                    if self.Node_Temperatures[self.Lower_Thermostat_Node] < self.Set_Temperature_HeatPump - 0.5: # -0.5 to avoid accidentally surpassing set temperature
+                        self.Resistance_Active = True
+                    elif self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature_HeatPump - 0.5:
+                        self.Resistance_Active = True
+                    else:
+                        self.Resistance_Active = False
+            
+                # If the lower thermostat temperature is cold enough to use the HP
+                elif self.Node_Temperatures[self.Lower_Thermostat_Node] <= self.Set_Temperature_HeatPump - self.HeatPump_Deadband:
+                    self.Resistance_Active = True
+
+                # If the upper thermostat temperature is cold enough to use 2nd stage
+                elif self.Node_Temperatures[self.Upper_Thermostat_Node] <= self.Set_Temperature_Resistance - self.Resistance_Deadband:
+                    self.Resistance_Active = True
+                else:
+                    self.Resistance_Active = False
+                
+            # If the upper thermostat temperature is cold enough to use 2nd stage
+            elif self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature_Resistance - self.Resistance_Deadband:
+                self.Resistance_Active = True
+
+            # If 2nd stage is currently active
+            elif self.Resistance_Active == True:
+                # If 2nd stage has not yet finished heating the water
+                if self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature_Resistance - 1:
+                    self.Resistance_Active = True
+
+                # If 2nd stage has not yet finished heating the water
+                elif self.Node_Temperatures[self.Lower_Thermostat_Node] < self.Set_Temperature_Resistance - 1:
+                    # If the upper thermostat temperature is not above the set temperature
+                    if self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature_Resistance + 1:
+                        self.Resistance_Active = True
+                    else:
+                        self.Resistance_Active = False
+                else:
+                    self.Resistance_Active = False
+            else:
+                self.Resistance_Active = False
+            
+            # Logic implementing the 2nd stage lockout when the heat pump has
+            # been active for less time than specified
+#            if self.Time_Since_HeatPump_Activation < self.Resistance_Lockout_Time:
+#                if self.Node_Temperatures[self.Upper_Thermostat_Node] > 40.5:
+#                    self.Resistance_Active = False
+        
+            # Implement second stage control logic. If the resistance elements are
+            # active the heat pump is active unless it's too cold out
+            if self.Resistance_Active == True:
+                if data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']] > self.Cutoff_Temperature:
+                    self.HeatPump_Active == True
+                
+            # End Rheem control logic
     
     def calculate_timestep(self, data):
         '''
@@ -362,135 +510,12 @@ class HPWH_MultipleNodes():
         Heat_Addition_HP = self.HeatAddition_HeatPump * self.calculate_HP_HeatAddition(self.Node_Temperatures[self.Lower_Thermostat_Node], data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']])
         data[self.col_indx['Heat Pump Heat Addition (kW)']] = Heat_Addition_HP
         
-        # Start Rheem control logic
-        # When updating to add control logic from other manufacturers:
-        # -Remove this code to an external library of contro logic functions
-        # -Include a function to choose manufacturer control logic based on config file
-        # -Have that function call another function for control logic of that manufacturer
-        # -Update config files to state which manufacturer's control logic to use
-        # -It's possible each manufacturer will have multiple sets of control logic
-        # --Consider specifying a specific type of logic, not just a manufacturer
-        # Determine the deadband for the heat pump based on current conditions
-        # and simulation style
-        if self.Varying_Set_Temperature == True:
-            if abs(self.Set_Temperature - data[self.col_indx['Set Temperature (deg C)']]) > 0.075:
-                self.Time_Since_Set_Change = 0
-            else:
-                self.Time_Since_Set_Change += data[self.col_indx['Timestep (min)']] * Seconds_In_Minute
-            self.Set_Temperature = data[self.col_indx['Set Temperature (deg C)']]
-            
-        if self.Time_Since_Set_Change < self.HeatPump_SetChange_TimeWindow:
-            self.HeatPump_Deadband = self.HeatPump_ActivationDeadband_RecentSetChange
-        else:
-            self.HeatPump_Deadband = self.HeatPump_Activation_Deadband
-
-        # Heat pump control logic logic. Determines whether the heat pump is on
-        # or off
-        # If the surrounding air is too cold for the heat pump to operate
-        if data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']] < self.Cutoff_Temperature:
-            self.HeatPump_Active = False
-            
-        elif self.HeatPump_Active == True:
-            # If the upper thermostat node temperature is above the set
-            # temperature Rheem HPs will not engage
-            # Can I delete the first part talking about the lower thermostat?
-            if (self.Node_Temperatures[self.Lower_Thermostat_Node] < self.Set_Temperature) & (self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature + 1):
-                self.HeatPump_Active = True
-            else:
-                self.HeatPump_Active = False
-        elif self.HeatPump_Active == False:
-            # If the lower thermostat water temperature is cold enough to
-            # activate the heat pump
-            if self.Node_Temperatures[self.Lower_Thermostat_Node] <= self.Set_Temperature - self.HeatPump_Deadband:
-                if self.Node_Temperatures[self.Upper_Thermostat_Node] > self.Set_Temperature:
-                    self.HeatPump_Active = False
-                else:
-                    self.HeatPump_Active = True
-            # If the upper thermostat calls for heating, but the lower thermostat is warm
-            elif self.Node_Temperatures[self.Upper_Thermostat_Node] <= self.Set_Temperature - self.HeatPump_ActivationDeadband_LowStratification:
-                if (self.Node_Temperatures[self.Upper_Thermostat_Node] - self.Node_Temperatures[self.Lower_Thermostat_Node]) < 5:
-                    self.HeatPump_Active = True
-                else:
-                    self.HeatPump_Active = False
-            else:
-                self.HeatPump_Active = False
-        else:
-            self.HeatPump_Active = False
-        
-        # Set resistance element deadband based on HP status
-        if self.HeatPump_Active == True:
-            Resistance_Deadband = self.Upper_Resistance_Deadband_HPActive
-#            self.Time_Since_HeatPump_Activation += data[self.col_indx['Timestep (min)']]
-        else:
-            Resistance_Deadband = self.Upper_Resistance_Deadband
-#            self.Time_Since_HeatPump_Activation = 0
-
-             
-        # Resistance element control logic
-        # If it is too cold for the heat pump to operate
-        if data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']] < self.Cutoff_Temperature:
-
-            if self.Resistance_Active == True:
-                # If the water in the tank is still cold
-                # The resistance elements tend to cut off 2.3 deg C below the
-                # set temperature
-                if self.Node_Temperatures[self.Lower_Thermostat_Node] < self.Set_Temperature - 0.5: # -0.5 to avoid accidentally surpassing set temperature
-                    self.Resistance_Active = True
-                elif self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature - 0.5:
-                    self.Resistance_Active = True
-                else:
-                    self.Resistance_Active = False
-            
-            # If the lower thermostat temperature is cold enough to use the HP
-            elif self.Node_Temperatures[self.Lower_Thermostat_Node] <= self.Set_Temperature - self.HeatPump_Deadband:
-                self.Resistance_Active = True
-
-            # If the upper thermostat temperature is cold enough to use 2nd stage
-            elif self.Node_Temperatures[self.Upper_Thermostat_Node] <= self.Set_Temperature - Resistance_Deadband:
-                self.Resistance_Active = True
-            else:
-                self.Resistance_Active = False
-                
-        # If the upper thermostat temperature is cold enough to use 2nd stage
-        elif self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature - Resistance_Deadband:
-            self.Resistance_Active = True
-
-        # If 2nd stage is currently active
-        elif self.Resistance_Active == True:
-            # If 2nd stage has not yet finished heating the water
-            if self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature - 1:
-                self.Resistance_Active = True
-
-            # If 2nd stage has not yet finished heating the water
-            elif self.Node_Temperatures[self.Lower_Thermostat_Node] < self.Set_Temperature - 1:
-                # If the upper thermostat temperature is not above the set temperature
-                if self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature + 1:
-                    self.Resistance_Active = True
-                else:
-                    self.Resistance_Active = False
-            else:
-                self.Resistance_Active = False
-        else:
-            self.Resistance_Active = False
-            
-        # Logic implementing the 2nd stage lockout when the heat pump has
-        # been active for less time than specified
-#        if self.Time_Since_HeatPump_Activation < self.Resistance_Lockout_Time:
-#            if self.Node_Temperatures[self.Upper_Thermostat_Node] > 40.5:
-#                self.Resistance_Active = False
-        
-        # Implement second stage control logic. If the resistance elements are
-        # active the heat pump is active unless it's too cold out
-        if self.Resistance_Active == True:
-            if data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']] > self.Cutoff_Temperature:
-                self.HeatPump_Active == True
-                
-        # End Rheem control logic
+        self.control_logic(self.Control_Logic_Model, data)
 
         # Start heating logic
         # Assumptions to emulate observed Rheem operation:
         # -Separate ER elements at upper and lower thermostat locations
-        # -50/50 split when both thermostats below temperature
+        # -5100% to top when upper thermostat below temperature
         # -100% to bottom when upper thermostat at temperature
         # -Lower element heats all nodes below a stratification layer
         # -Heat pump heats all nodes below a stratification layer
@@ -498,10 +523,16 @@ class HPWH_MultipleNodes():
         #       stratification layer if the layer is low in the tank
         # Set resistance element heat rates based on status
         Heating_Resistance = []
+        
         if self.Resistance_Active == True:
+            if data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']] < self.Cutoff_Temperature:
+                Temperature_Resistance_Target = max(self.Set_Temperature_HeatPump, self.Set_Temperature_Resistance)
+            else:
+                Temperature_Resistance_Target = self.Set_Temperature_Resistance
+                
             # If the upper thermostat temperature is cold the heat goes to the
             # upper resistance element
-            if self.Node_Temperatures[self.Upper_Thermostat_Node] < self.Set_Temperature - 0.5:
+            if self.Node_Temperatures[self.Upper_Thermostat_Node] < Temperature_Resistance_Target - 0.5:
                 Number_Heated = 1
 
 #                # Identify the nodes heated by the resistance elements assuming
@@ -522,8 +553,8 @@ class HPWH_MultipleNodes():
                 Heating_Resistance[0:] = [0] * self.Number_Nodes
                 Heating_Resistance[self.Upper_Thermostat_Node] = self.Power_Backup
 
-            # If the top if not cold but the bottom is
-            elif self.Node_Temperatures[self.Lower_Thermostat_Node] < self.Set_Temperature:
+            # If the top is not cold but the bottom is
+            elif self.Node_Temperatures[self.Lower_Thermostat_Node] < Temperature_Resistance_Target:
                 # Add heat to all nodes below the stratification layer. Use
                 # the full heating power
                 Number_Heated = 1
@@ -540,9 +571,11 @@ class HPWH_MultipleNodes():
                 print(self.Resistance_Active)
                 print(self.Node_Temperatures[self.Upper_Thermostat_Node])
                 print(self.Node_Temperatures[self.Lower_Thermostat_Node])
-                print(self.Set_Temperature)
+                print(self.Set_Temperature_Resistance)
+                print(self.Set_Temperature_HeatPump)
+                print(Temperature_Resistance_Target)
                 print(data[self.col_indx['Evaporator Air Inlet Temperature (deg C)']])
-                print(Resistance_Deadband)
+                print(self.Resistance_Deadband)
         else:
             Heating_Resistance = [0] * self.Number_Nodes
                 

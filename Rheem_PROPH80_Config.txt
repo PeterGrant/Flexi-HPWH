@@ -11,11 +11,14 @@
  "Heat Rate Coefficients": [ 1.24534738e+00,  3.47447494e-04,  1.13016771e-02, -1.04789659e-04, 1.31015765e-04, -2.91645088e-04],
  "Volume Tank (L)": 280,
  "Power Coefficients": [ 1.94878810e-01,  1.35139016e-03, -3.76075304e-03,  3.43039433e-05, 1.59557400e-04],
- "Set Temperature (deg C)": 51.666,
+ "Set Temperature, Heat Pump (deg C)": 51.666,
+ "Set Temperature, Resistance (deg C)": 51.666,
  "Varying Set Temperature": 1,
  "Cutoff Temperature (deg C)": 2.75,
  "Upper Thermostat Node": 19,
  "Lower Thermostat Node": 3,
  "Number of Nodes": 20,
- "Resistance Lockout Time (min)": 0
+ "Resistance Lockout Time (min)": 0,
+ "Control Logic Model": "Rheem PROPH80",
+ "Tank Model" :"Rheem PROPH80"
 }
