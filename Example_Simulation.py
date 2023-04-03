@@ -15,11 +15,9 @@ from HPWH_Model import HPWH_MultipleNodes
 from Utilities.Set_Temperature_Profiles import Profiles
 from Utilities.Installation_Configuration import get_temperatures
 from Utilities.Prepare_Inputs import Prepare_Inputs
+import Utilities.Conversions as Conversions
 
 cwd = os.getcwd()
-
-sys.path.append(os.path.join(cwd, '..', '..', 'References'))
-import Conversions as Conversions
 
 Start_Time = datetime.datetime.now()
 
